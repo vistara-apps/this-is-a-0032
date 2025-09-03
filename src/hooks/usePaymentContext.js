@@ -1,32 +1,69 @@
 import { useWalletClient } from "wagmi";
-import { useCallback } from "react";
-import axios from "axios";
-import { withPaymentInterceptor, decodeXPaymentResponse } from "x402-axios";
+import { useCallback, useState } from "react";
+import { paymentService } from "../services/paymentService";
 
+/**
+ * Payment context hook
+ * Provides payment functionality for the application
+ */
 export function usePaymentContext() {
   const { data: walletClient, isError, isLoading } = useWalletClient();
+  const [paymentHistory, setPaymentHistory] = useState([]);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const createSession = useCallback(async () => {
-    if (!walletClient || !walletClient.account) throw new Error("please connect your wallet");
-    if (isError) throw new Error("wallet not connected");
-    if (isLoading) throw new Error("wallet is loading");
+  /**
+   * Create a payment session for a photo
+   * @param {Object} photo - The photo object to purchase
+   * @param {string} size - The size of the photo (small, regular, full)
+   * @returns {Promise<Object>} - Payment session details
+   */
+  const createSession = useCallback(async (photo, size = 'regular') => {
+    if (!walletClient || !walletClient.account) throw new Error("Please connect your wallet");
+    if (isError) throw new Error("Wallet not connected");
+    if (isLoading) throw new Error("Wallet is loading");
     
-    const baseClient = axios.create({
-        baseURL: "https://payments.vistara.dev",
-        headers: {
-            "Content-Type": "application/json",
-        },
-    });
+    setIsProcessing(true);
     
-    const apiClient = withPaymentInterceptor(baseClient, walletClient);
-    const response = await apiClient.post("/api/payment", { amount: "$0.001" });
-    const paymentResponse = response.config.headers["X-PAYMENT"];
-    
-    if (!paymentResponse) throw new Error("payment response is absent");
-    
-    const decoded = decodeXPaymentResponse(paymentResponse);
-    console.log(`decoded payment response: ${JSON.stringify(decoded)}`);
-  }, [walletClient]);
+    try {
+      // Create payment session
+      const result = await paymentService.createPaymentSession(walletClient, photo, size);
+      
+      // Add to payment history
+      setPaymentHistory(prev => [result, ...prev]);
+      
+      return result;
+    } catch (error) {
+      console.error('Payment error:', error);
+      throw error;
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [walletClient, isError, isLoading]);
 
-  return { createSession };
+  /**
+   * Get price for a photo
+   * @param {Object} photo - The photo object
+   * @param {string} size - The size of the photo (small, regular, full)
+   * @returns {string} - The price in USD format
+   */
+  const getPhotoPrice = useCallback((photo, size = 'regular') => {
+    return paymentService.calculatePrice(photo, size);
+  }, []);
+
+  /**
+   * Get bulk discount information
+   * @param {number} quantity - Number of photos to purchase
+   * @returns {Object} - Discount information
+   */
+  const getBulkDiscount = useCallback((quantity) => {
+    return paymentService.getBulkDiscount(quantity);
+  }, []);
+
+  return { 
+    createSession,
+    getPhotoPrice,
+    getBulkDiscount,
+    paymentHistory,
+    isProcessing
+  };
 }

@@ -19,20 +19,36 @@ import {
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 import './index.css'
+
+// Create a client for React Query
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+// Create Wagmi config
+const wagmiConfig = getDefaultConfig({
+  appName: "AnimalSnap Search",
+  projectId: "9f4bd472c01ba49282b42e5e1874c2af",
+  chains: [mainnet, polygon, optimism, arbitrum, base],
+});
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <WagmiProvider config={getDefaultConfig({
-      appName: "AnimalSnap Search",
-      projectId: "9f4bd472c01ba49282b42e5e1874c2af",
-      chains: [mainnet, polygon, optimism, arbitrum, base],
-    })}>
-      <QueryClientProvider client={new QueryClient()}>
-        <RainbowKitProvider>
-          <App />
-        </RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <ErrorBoundary>
+      <WagmiProvider config={wagmiConfig}>
+        <QueryClientProvider client={queryClient}>
+          <RainbowKitProvider>
+            <App />
+          </RainbowKitProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 )

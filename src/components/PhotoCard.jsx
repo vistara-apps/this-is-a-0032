@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Download, Eye, Info, User, Heart } from 'lucide-react';
+import { usePaymentContext } from '../hooks/usePaymentContext';
 
 const PhotoCard = ({ 
   photo, 
@@ -11,6 +12,7 @@ const PhotoCard = ({
 }) => {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const { getPhotoPrice } = usePaymentContext();
 
   if (loading) {
     return (
@@ -26,7 +28,7 @@ const PhotoCard = ({
     );
   }
 
-  const price = '$1.50'; // Static price for demo
+  const price = getPhotoPrice(photo, 'regular');
 
   return (
     <div className={`card hover:shadow-lg transition-all duration-200 group ${variant === 'withOverlay' ? 'relative overflow-hidden' : ''}`}>
