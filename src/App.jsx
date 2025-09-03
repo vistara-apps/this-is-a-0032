@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Download, Eye, Info, X, ExternalLink, Camera } from 'lucide-react';
+import { Search, Download, Eye, Info, X, ExternalLink, Camera, Filter } from 'lucide-react';
 import AppHeader from './components/AppHeader';
 import SearchInput from './components/SearchInput';
 import PhotoCard from './components/PhotoCard';
 import InfoModal from './components/InfoModal';
 import PreviewModal from './components/PreviewModal';
+import PaymentModal from './components/PaymentModal';
+import SearchHistory from './components/SearchHistory';
+import SearchFilters from './components/SearchFilters';
 import { unsplashAPI } from './services/unsplashAPI';
 import { usePaymentContext } from './hooks/usePaymentContext';
+import { useSearchHistory } from './hooks/useSearchHistory';
 
 function App() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -15,10 +19,25 @@ function App() {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [showLicenseModal, setShowLicenseModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [error, setError] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
+  const [showSearchHistory, setShowSearchHistory] = useState(false);
+  const [filters, setFilters] = useState({
+    orientation: '',
+    color: '',
+    animalType: '',
+    sort: 'relevant'
+  });
 
-  const { createSession } = usePaymentContext();
+  const { getPhotoPrice } = usePaymentContext();
+  const { 
+    searchHistory, 
+    trackSearch, 
+    clearHistory, 
+    getSuggestions, 
+    suggestions 
+  } = useSearchHistory();
 
   useEffect(() => {
     // Load featured animal photos on initial load
@@ -31,10 +50,42 @@ function App() {
     setLoading(true);
     setError('');
     if (updateSearched) setHasSearched(true);
+    setShowSearchHistory(false);
     
     try {
-      const results = await unsplashAPI.searchPhotos(query + ' animals');
+      // Build search parameters from filters
+      const searchParams = {};
+      
+      if (filters.orientation) {
+        searchParams.orientation = filters.orientation;
+      }
+      
+      if (filters.color) {
+        searchParams.color = filters.color;
+      }
+      
+      // Add animal type to query if selected
+      let searchQuery = query;
+      if (filters.animalType) {
+        searchQuery = `${query} ${filters.animalType}`;
+      }
+      
+      // Add sort parameter
+      if (filters.sort && filters.sort !== 'relevant') {
+        searchParams.order_by = filters.sort === 'latest' ? 'latest' : 'popular';
+      }
+      
+      // Execute search
+      const response = await unsplashAPI.searchPhotos(searchQuery, 1, 12, searchParams);
+      const results = response.results || [];
+      
+      // Update state
       setPhotos(results);
+      
+      // Track search query
+      if (updateSearched && results.length > 0) {
+        trackSearch(query, results);
+      }
     } catch (err) {
       setError('Failed to fetch photos. Please try again.');
       console.error('Search error:', err);
@@ -43,27 +94,14 @@ function App() {
     }
   };
 
-  const handleDownload = async (photo) => {
-    try {
-      setLoading(true);
-      await createSession();
-      
-      // Simulate download after payment
-      const link = document.createElement('a');
-      link.href = photo.urls.full;
-      link.download = `animalsnap-${photo.id}.jpg`;
-      link.target = '_blank';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      alert('Payment successful! Your download has started.');
-    } catch (error) {
-      console.error('Payment failed:', error);
-      alert('Payment failed. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+  const handleDownload = (photo) => {
+    setSelectedPhoto(photo);
+    setShowPaymentModal(true);
+  };
+  
+  const handlePaymentSuccess = (result) => {
+    console.log('Payment successful:', result);
+    // Payment modal will handle the download
   };
 
   const handlePreview = (photo) => {
@@ -92,13 +130,74 @@ function App() {
             High-quality, legally cleared images ready for download.
           </p>
           
-          <SearchInput
-            value={searchTerm}
-            onChange={setSearchTerm}
-            onSearch={() => handleSearch()}
-            loading={loading}
-            placeholder="Search for specific animal photos... (e.g., 'golden retriever playing')"
-          />
+          <div className="relative">
+            <SearchInput
+              value={searchTerm}
+              onChange={(value) => {
+                setSearchTerm(value);
+                getSuggestions(value);
+                setShowSearchHistory(value.length > 0);
+              }}
+              onSearch={() => handleSearch()}
+              loading={loading}
+              placeholder="Search for specific animal photos... (e.g., 'golden retriever playing')"
+            />
+            
+            {/* Search History Dropdown */}
+            {showSearchHistory && (searchHistory.length > 0 || suggestions.length > 0) && (
+              <div className="absolute z-10 mt-2 w-full">
+                {suggestions.length > 0 && (
+                  <div className="bg-surface rounded-lg shadow-lg border border-muted mb-2 overflow-hidden">
+                    <div className="p-2 border-b border-muted">
+                      <span className="text-sm text-muted">Suggestions</span>
+                    </div>
+                    <ul>
+                      {suggestions.map((suggestion, index) => (
+                        <li key={`suggestion-${index}`}>
+                          <button
+                            className="w-full text-left p-3 hover:bg-bg flex items-center gap-2"
+                            onClick={() => {
+                              setSearchTerm(suggestion);
+                              setShowSearchHistory(false);
+                              handleSearch(suggestion);
+                            }}
+                          >
+                            <Search className="w-4 h-4 text-muted" />
+                            <span>{suggestion}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                
+                {searchHistory.length > 0 && (
+                  <SearchHistory
+                    history={searchHistory.slice(0, 5)}
+                    onSelectQuery={(query) => {
+                      setSearchTerm(query);
+                      setShowSearchHistory(false);
+                      handleSearch(query);
+                    }}
+                    onClearHistory={clearHistory}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+          
+          {/* Search Filters */}
+          <div className="mt-4">
+            <SearchFilters
+              filters={filters}
+              onFilterChange={(newFilters) => {
+                setFilters(newFilters);
+                if (searchTerm) {
+                  handleSearch(searchTerm);
+                }
+              }}
+            />
+          </div>
         </div>
 
         {/* Error Message */}
@@ -193,6 +292,14 @@ function App() {
             setShowPreviewModal(false);
             handleDownload(selectedPhoto);
           }}
+        />
+      )}
+      
+      {showPaymentModal && selectedPhoto && (
+        <PaymentModal
+          photo={selectedPhoto}
+          onClose={() => setShowPaymentModal(false)}
+          onSuccess={handlePaymentSuccess}
         />
       )}
     </div>
